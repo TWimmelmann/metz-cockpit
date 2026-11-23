@@ -74,13 +74,19 @@ target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.8"/><circl
 const ic=(n,s=18,w=1.7)=>`<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||''}</svg>`;
 
 /* ============ Tilstand ============ */
-const S={deals:[],studio:[],projects:[],ideas:[],cfg:{target:null,targetRev:null,me:'Tobias',team:['Tobias'],commission:2},tpl:{steps:DEF_STEPS.slice(),info:DEF_INFO.slice()},loaded:false,live:false};
+const S={studio:[],projects:[],ideas:[],cfg:{target:null,targetRev:null,me:'Tobias',team:['Tobias'],commission:2},tpl:{steps:DEF_STEPS.slice(),info:DEF_INFO.slice()},loaded:false,live:false};
+const isLead=()=>!!(window.metzAuth&&window.metzAuth.isLeader);
+let _deals=[],_dv=0,_dc=null,_dk='';
+const scopeKey=()=>(window.metzAuth?(isLead()&&U.scope==='team'?'team':'mine:'+S.cfg.me):'all');
+Object.defineProperty(S,'deals',{configurable:true,get(){const k=_dv+'|'+scopeKey();if(k!==_dk){const sk=scopeKey();_dc=sk==='all'||sk==='team'?_deals:_deals.filter(d=>!d.owner||d.owner===S.cfg.me);_dk=k}return _dc},set(v){_deals=v;_dv++}});
+Object.defineProperty(S,'allDeals',{get(){return _deals}});
+const RAW=col=>col==='deals'?_deals:S[col];
 let db=null,dl=null;
 const LS=(()=>{try{const s=window.localStorage;s.setItem('_mc','1');s.removeItem('_mc');return s}catch(e){return null}})();
 const pref=(k,d)=>{try{const v=LS&&LS.getItem('mc.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}};
 const setPref=(k,v)=>{try{LS&&LS.setItem('mc.'+k,JSON.stringify(v))}catch(e){}};
 const ALLCOLS=['contact','type','stage','owner','source','score','revenue','value','next','updated'],DEFCOLS=['contact','type','stage','score','value','next','updated'];
-const U={view:'dashboard',param:null,
+const U={view:'dashboard',param:null,scope:pref('scope','mine'),
  p:{tab:'open',type:'all',q:'',sort:{k:'next',d:1},mode:pref('pmode','list'),f:{seg:'',owner:'',src:''}},
  o:{tab:'all',q:'',closed:new Set()},c:{tab:'all',q:''},s:{tab:'all',q:''},mx:{all:false},pj:{tab:'alle'},
  id:{tab:'alle',sort:'new',draft:{},edit:null},
@@ -177,12 +183,12 @@ async function write(col,id,data){const k=col+'/'+id;PEND.set(k,data);if(RUN.has
  try{while(PEND.has(k)){const d=PEND.get(k);PEND.delete(k);try{const ref=db.collection(col).doc(id);if(d===null)await ref.delete();else await ref.set(d)}catch(e){toast('Kunne ikke gemme ('+((e&&e.code)||'fejl')+')',null,'','err')}}}
  finally{RUN.delete(k)}}
 async function writeDoc(path,data){const [c,id]=path.split('/');if(db)return write(c,id,clean(data))}
-function put(col,obj,opt={}){const now=nowIso();const o={...obj,updatedAt:now};if(opt.create&&!o.createdAt)o.createdAt=now;const full=NORM[col](o);const a=S[col],i=a.findIndex(x=>x.id===full.id);if(i<0)a.push(full);else a[i]=full;schedule();if(!db)return Promise.resolve(full);const {id,...body}=full;return write(col,id,clean(body)).then(()=>full)}
-function del(col,obj){S[col]=S[col].filter(x=>x.id!==obj.id);U.sel.delete(obj.id);schedule();if(!db)return Promise.resolve();return write(col,obj.id,null)}
+function put(col,obj,opt={}){const now=nowIso();const o={...obj,updatedAt:now};if(opt.create&&!o.createdAt)o.createdAt=now;const full=NORM[col](o);const a=RAW(col),i=a.findIndex(x=>x.id===full.id);if(i<0)a.push(full);else a[i]=full;if(col==='deals')_dv++;schedule();if(!db)return Promise.resolve(full);const {id,...body}=full;return write(col,id,clean(body)).then(()=>full)}
+function del(col,obj){S[col]=RAW(col).filter(x=>x.id!==obj.id);U.sel.delete(obj.id);schedule();if(!db)return Promise.resolve();return write(col,obj.id,null)}
 function applySnap(col,snap){const nm=NORM[col],key=id=>col+'/'+id,busy=id=>PEND.has(key(id))||RUN.has(key(id));
  const srv=snap.docs.map(x=>nm({id:x.id,...(x.data()||{})}));
- const out=srv.map(d=>busy(d.id)?S[col].find(x=>x.id===d.id):d).filter(Boolean);
- S[col].forEach(l=>{if(busy(l.id)&&!out.some(o=>o.id===l.id)&&PEND.get(key(l.id))!==null)out.push(l)});
+ const out=srv.map(d=>busy(d.id)?RAW(col).find(x=>x.id===d.id):d).filter(Boolean);
+ RAW(col).forEach(l=>{if(busy(l.id)&&!out.some(o=>o.id===l.id)&&PEND.get(key(l.id))!==null)out.push(l)});
  S[col]=out.filter(d=>PEND.get(key(d.id))!==null)}
 const saveCfg=()=>{normCfg();schedule();writeDoc('config/main',S.cfg)};
 const saveTpl=()=>{schedule();writeDoc('config/studio',S.tpl)};
@@ -235,7 +241,7 @@ function renderSide(){const t=today(),open=S.deals.filter(d=>OPEN.includes(d.sta
  const tl=(k,label)=>{const c=open.filter(d=>d.type===(k==='none'?'':k)).length;return `<button class="nav" data-ptype="${k}"><span class="sq" style="background:${TYPES[k==='none'?'':k].c}"></span><span>${label}</span>${c?`<span class="cnt">${c}</span>`:''}</button>`};
  $('#side').innerHTML=`<button class="ws" data-go="dashboard"><span class="ws-logo">M</span><span class="grow"><b>Metz A/S</b><small>New business cockpit</small></span>${ic('updown',16)}</button>
  <button class="sbox" data-act="palette">${ic('search',16)}<span>Søg</span><span class="kbd">/</span></button>
- ${sec('salg','Salg',item('dashboard','dash','Dashboard')+item('pipeline','pipe','Pipeline',open.length)+item('ordrer','orders','Ordrer',actO)+item('kunder','users','Kunder'))}
+ ${sec('salg','Salg',item('dashboard','dash','Dashboard')+item('pipeline','pipe','Pipeline',open.length)+item('ordrer','orders','Ordrer',actO)+item('kunder','users','Kunder')+(isLead()?item('newbiz','target','New business'):''))}
  ${sec('studio','Metz Studio',item('studio','store','Studio-kunder',S.studio.length)+item('onboarding','route','Onboarding',onb.length,miss))}
  ${sec('team','Team',item('projekter','folder','Projekter',S.projects.filter(p=>p.status==='igang').length)+item('ideer','bulb','Idéer',S.ideas.filter(i=>i.status==='ny').length))}
  ${sec('typer','Åbne deals pr. type',tl('studio','Metz Studio')+tl('adhoc','Ad hoc-ordrer')+tl('none','Uafklarede'))}
@@ -244,7 +250,7 @@ function renderSide(){const t=today(),open=S.deals.filter(d=>OPEN.includes(d.sta
 function renderTop(){const V=VIEWS[U.view]||VIEWS.dashboard;let crumb=`<b>${V.t}</b>`;
  if(U.view==='studio'&&U.param){const s=S.studio.find(x=>x.id===U.param);crumb=`<a href="#studio" data-go="studio" class="hide-s">Studio-kunder</a><span class="hide-s">${ic('chevr',14)}</span><b>${esc(s?s.company:'Kunde')}</b>`}
  const n=actionItems().length,team=S.cfg.team||[];
- $('#topbar').innerHTML=`<button class="ib hb" data-act="menu" aria-label="Åbn menu">${ic('menu',20)}</button><div class="crumb">${crumb}</div><span class="grow"></span>
+ $('#topbar').innerHTML=`<button class="ib hb" data-act="menu" aria-label="Åbn menu">${ic('menu',20)}</button><div class="crumb">${crumb}</div>${isLead()&&U.view!=='newbiz'&&['dashboard','pipeline','ordrer','kunder'].includes(U.view)?`<div class="seg scope" role="group" aria-label="Vis tal for">${[['mine','Mine'],['team','Hele teamet']].map(([k,n])=>`<button class="${U.scope===k?'on':''}" data-scope="${k}">${n}</button>`).join('')}</div>`:''}<span class="grow"></span>
  <button class="cmdk hide-m" data-act="palette">${ic('search',16)}<span>Søg efter kunder, deals…</span><span class="kbd">⌘K</span></button>
  <button class="ib only-m" data-act="palette" aria-label="Søg">${ic('search',19)}</button>
  <button class="ib" data-act="bell" aria-label="Kræver handling">${ic('bell',19)}${n?`<span class="bdg">${n>9?'9+':n}</span>`:''}</button>
@@ -479,7 +485,32 @@ function vSettings(){const c=S.cfg,tp=U.tplDraft||{};
  <section class="pn s-wide">${cardH('Data')}<div class="data-l"><button class="btn" data-act="export" data-what="pipeline">${ic('cloudDown',16)}Pipeline (CSV)</button><button class="btn" data-act="export" data-what="orders">${ic('cloudDown',16)}Ordrer (CSV)</button><button class="btn" data-act="export" data-what="studio">${ic('cloudDown',16)}Studio-kunder (CSV)</button><button class="btn" data-act="backup">${ic('copy',16)}Backup (JSON)</button></div><p class="muted sm-p">${S.deals.length} deals · ${S.studio.length} Studio-kunder · ${S.projects.length} projekter · ${S.ideas.length} idéer. ${window.metzAuth?'Data gemmes i Supabase (Postgres) og kræver login.':'Data gemmes i dette artefakt og er privat, indtil du deler det.'}</p></section>
  </div>`}
 
-const VIEWS={dashboard:{t:'Dashboard',ic:'dash',r:vDash},pipeline:{t:'Pipeline',ic:'pipe',r:vPipe},ordrer:{t:'Ordrer',ic:'orders',r:vOrders},kunder:{t:'Kunder',ic:'users',r:vCustomers},studio:{t:'Metz Studio',ic:'store',r:vStudio},onboarding:{t:'Onboarding',ic:'route',r:vOnb},projekter:{t:'Projekter',ic:'folder',r:vProj},ideer:{t:'Idéer',ic:'bulb',r:vIdeas},indstillinger:{t:'Indstillinger',ic:'gear',r:vSettings}};
+const SELLC=['#f26b1f','#2563eb','#16a34a','#9333ea','#eab308','#0891b2','#db2777','#64748b'];
+function vNewbiz(){if(!isLead())return `<div class="tw">${empty('users','Kun for ledere','Siden viser hele afdelingens tal og er kun synlig for ledere.')}</div>`;
+ const all=S.allDeals.filter(d=>d.stage==='vundet'&&d.wonDate),years=[...new Set(all.map(d=>d.wonDate.slice(0,4)))].sort().reverse(),y=U.nbYear&&years.includes(U.nbYear)?U.nbYear:(years[0]||today().slice(0,4));
+ const inY=all.filter(d=>d.wonDate.startsWith(y)),R=real(inY),E=estOnly(inY);
+ const active=new Set(((window.metzAuth&&window.metzAuth.members)||[]).filter(m=>m.active!==false).map(m=>m.name));
+ const owners=[...new Set(inY.map(d=>d.owner||'Ukendt'))];
+ const rows=owners.map(o=>{const ds=inY.filter(d=>(d.owner||'Ukendt')===o),r=real(ds),wv=r.filter(d=>isN(d.value)),rev=sumR(r),db=sumV(r);return {o,n:ds.length,rev,db,dg:dgOf(rev,db),avg:wv.length?db/wv.length:null,edb:sumV(estOnly(ds)),cur:active.has(o),last:ds.map(d=>d.wonDate).sort().pop()}}).sort((a,b)=>b.db-a.db);
+ const col={};rows.forEach((r,i)=>col[r.o]=SELLC[i%SELLC.length]);
+ const totRev=sumR(R),totDb=sumV(R),maxDb=Math.max(1,...rows.map(r=>r.db));
+ const M=U.chart==='rev'?'rev':'db',f=d=>M==='rev'?num(d.revenue):num(d.value);
+ const lastM=y===today().slice(0,4)?+today().slice(5,7):12,months=Array.from({length:lastM},(_,i)=>{const k=`${y}-${pad(i+1)}`;return {k,l:new Date(+y,i,1).toLocaleDateString('da-DK',{month:'short'}).replace('.','')}});
+ const mrows=months.map(m=>{const ds=R.filter(d=>ymOf(d)===m.k);return {...m,parts:rows.map(r=>({o:r.o,v:Math.max(0,ds.filter(d=>(d.owner||'Ukendt')===r.o).reduce((x,d)=>x+f(d),0))})),n:ds.length}});
+ const mmax=Math.max(0,...mrows.map(m=>m.parts.reduce((x,p)=>x+p.v,0)));
+ const top=niceMax(mmax||1);
+ const chart=mmax?`<div class="chart"><div class="gls">${[0,.25,.5,.75,1].map(x=>`<div class="gl" style="bottom:${x*100}%"><span>${x?krs(top*x).replace(' kr',''):'0'}</span></div>`).join('')}</div><div class="cols">${mrows.map(m=>{const t=m.parts.reduce((x,p)=>x+p.v,0),hh=(t/top*100).toFixed(1);return `<div class="mc" tabindex="0" style="--h:${hh}%"><div class="stk" style="height:${hh}%">${m.parts.filter(p=>p.v).map(p=>`<i style="flex:${p.v};background:${col[p.o]}"></i>`).join('')}</div><span class="ml">${m.l}</span><div class="tip"><b>${cap(monthName(m.k))}</b>${m.parts.filter(p=>p.v).map(p=>`<span><i style="background:${col[p.o]}"></i>${esc(p.o)} ${kr(p.v)}</span>`).join('')}<em>I alt ${kr(t)} · ${m.n} ordrer</em></div></div>`}).join('')}</div></div>`:empty('pipe','Ingen beløb i '+y,'Når ordrer har beløb, vises de her pr. sælger.');
+ const acc=new Map();R.forEach(d=>{const k=coKey(d.company);if(!acc.has(k))acc.set(k,{name:d.company,rev:0,db:0,n:0,sel:new Set()});const a=acc.get(k);a.rev+=num(d.revenue);a.db+=num(d.value);a.n++;a.sel.add(d.owner||'Ukendt')});
+ const tops=[...acc.values()].sort((a,b)=>b.db-a.db).slice(0,10);
+ const yearSeg=years.length>1?`<div class="seg sm-seg">${years.map(x=>`<button class="${x===y?'on':''}" data-nbyear="${x}">${x}</button>`).join('')}</div>`:'';
+ return `<div class="ph"><div class="grow"><h1>New business<span>${y}</span></h1><p class="sub">Hele afdelingen – nuværende og tidligere sælgere. Kun ledere kan se denne side.</p></div><div class="ph-a">${yearSeg}</div></div>
+ <div class="kpis">${kpi('Omsætning '+y,krs(totRev),{hint:`${R.length} ordrer`})}${kpi('DB '+y,krs(totDb),{hint:`DG ${pct(dgOf(totRev,totDb))}`})}${kpi('Forventet',E.length?'+'+krs(sumV(E))+' DB':'—',{hint:E.length?`Omsætning +${krs(sumR(E))}`:'Ingen estimater'})}${kpi('Sælgere',rows.length,{hint:`${rows.filter(r=>r.cur).length} nuværende · ${rows.filter(r=>!r.cur).length} tidligere`})}</div>
+ <div class="grid one"><section class="pn s12">${cardH('Pr. sælger','Sorteret efter DB')}<div class="tw resp flat"><table class="t nb"><thead><tr><th class="c1p">Sælger</th><th class="num">Ordrer</th><th class="num">Omsætning</th><th class="num">DB</th><th class="num">DG</th><th class="num">Snit-DB</th><th>Andel af DB</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="c1p"><span class="cname">${av(r.o,'sm')}<span><b>${esc(r.o)}</b><small>${r.cur?'Nuværende':'Tidligere sælger'}${r.edb?` · <span class="est-t">+${krs(r.edb)} forv.</span>`:''}</small></span></span></td><td class="num">${r.n}</td><td class="num">${kr(r.rev)}</td><td class="num"><b class="w6">${kr(r.db)}</b></td><td class="num">${dgBd(r.dg)}</td><td class="num">${isN(r.avg)?kr(Math.round(r.avg)):'—'}</td><td><div class="share"><i style="width:${Math.max(2,r.db/maxDb*100)}%;background:${col[r.o]}"></i><span>${totDb?Math.round(r.db/totDb*100):0} %</span></div></td></tr>`).join('')}</tbody><tfoot><tr><td class="c1p">I alt</td><td class="num">${inY.length}</td><td class="num">${kr(totRev)}</td><td class="num">${kr(totDb)}</td><td class="num">${dgBd(dgOf(totRev,totDb))}</td><td></td><td></td></tr></tfoot></table></div>
+ <div class="mlist">${rows.map(r=>`<div class="mrow">${av(r.o)}<div class="grow"><div class="mr1"><b>${esc(r.o)}</b><span class="w6">${krs(r.db)}</span></div><small>${r.cur?'Nuværende':'Tidligere sælger'} · ${r.n} ordrer</small><div class="mr2"><span class="muted" style="font-size:12.5px">Oms. ${krs(r.rev)}</span>${dgBd(r.dg)}</div></div></div>`).join('')}</div></section></div>
+ <div class="grid one"><section class="pn s12"><div class="pn-h"><div><h3>${M==='rev'?'Omsætning':'DB'} pr. måned</h3><small>Fordelt på sælgere · ${y}</small></div><div class="ch-r"><span class="leg">${rows.map(r=>`<span><i style="background:${col[r.o]}"></i>${esc(r.o.split(' ')[0])}</span>`).join('')}</span><div class="seg sm-seg">${[['db','DB'],['rev','Omsætning']].map(([k,n])=>`<button class="${M===k?'on':''}" data-chart="${k}">${n}</button>`).join('')}</div></div></div>${chart}</section></div>
+ <div class="grid one"><section class="pn s12">${cardH('Største kunder '+y,'Top 10 efter DB på tværs af sælgere')}<div class="tw resp flat"><table class="t"><thead><tr><th class="c1p">Kunde</th><th>Sælger</th><th class="num">Ordrer</th><th class="num">Omsætning</th><th class="num">DB</th><th class="num">DG</th></tr></thead><tbody>${tops.map(a=>`<tr><td class="c1p"><span class="cname">${co(a.name)}<span><b>${esc(a.name)}</b></span></span></td><td>${[...a.sel].map(o=>`<span class="ownc"><i style="background:${col[o]}"></i>${esc(o)}</span>`).join(' ')}</td><td class="num">${a.n}</td><td class="num">${kr(a.rev)}</td><td class="num"><b class="w6">${kr(a.db)}</b></td><td class="num">${dgBd(dgOf(a.rev,a.db))}</td></tr>`).join('')}</tbody></table></div>
+ <div class="mlist">${tops.map(a=>`<div class="mrow">${co(a.name)}<div class="grow"><div class="mr1"><b>${esc(a.name)}</b><span class="w6">${krs(a.db)}</span></div><small>${[...a.sel].map(esc).join(', ')} · ${a.n} ordrer</small></div></div>`).join('')}</div></section></div>`}
+const VIEWS={dashboard:{t:'Dashboard',ic:'dash',r:vDash},pipeline:{t:'Pipeline',ic:'pipe',r:vPipe},ordrer:{t:'Ordrer',ic:'orders',r:vOrders},kunder:{t:'Kunder',ic:'users',r:vCustomers},studio:{t:'Metz Studio',ic:'store',r:vStudio},onboarding:{t:'Onboarding',ic:'route',r:vOnb},projekter:{t:'Projekter',ic:'folder',r:vProj},ideer:{t:'Idéer',ic:'bulb',r:vIdeas},indstillinger:{t:'Indstillinger',ic:'gear',r:vSettings},newbiz:{t:'New business',ic:'target',r:vNewbiz}};
 
 /* ============ Drawer ============ */
 function curDeal(){const D=U.drawer;return D&&D.kind==='deal'&&D.id?S.deals.find(x=>x.id===D.id):null}
@@ -780,6 +811,8 @@ document.addEventListener('click',e=>{const t=e.target;if(!(t instanceof Element
  if(el=A('[data-tab]')){const [sc,k]=el.dataset.tab.split(':');U[sc].tab=k;U.sel.clear();schedule();return}
  if(el=A('[data-itab]')){U.id.tab=el.dataset.itab;paint();return}
  if(el=A('[data-grp]')){const k=el.dataset.grp,c=U.o.closed;if(c.has(k))c.delete(k);else c.add(k);paint();return}
+ if(el=A('[data-scope]')){U.scope=el.dataset.scope;setPref('scope',U.scope);_dk='';schedule();return}
+ if(el=A('[data-nbyear]')){U.nbYear=el.dataset.nbyear;schedule();return}
  if(el=A('[data-chart]')){U.chart=el.dataset.chart;setPref('chart',U.chart);paint();return}
  if(el=A('[data-sort]')){const k=el.dataset.sort;U.p.sort=U.p.sort.k===k?{k,d:-U.p.sort.d}:{k,d:['value','score','updated'].includes(k)?-1:1};schedule();return}
  if(el=A('[data-pmode]')){U.p.mode=el.dataset.pmode;setPref('pmode',U.p.mode);U.sel.clear();schedule();return}
