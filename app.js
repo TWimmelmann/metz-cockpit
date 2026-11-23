@@ -74,7 +74,7 @@ target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.8"/><circl
 const ic=(n,s=18,w=1.7)=>`<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]||''}</svg>`;
 
 /* ============ Tilstand ============ */
-const S={deals:[],studio:[],projects:[],ideas:[],cfg:{target:700000,targetRev:1500000,me:'Tobias',team:['Tobias'],commission:2},tpl:{steps:DEF_STEPS.slice(),info:DEF_INFO.slice()},loaded:false,live:false};
+const S={deals:[],studio:[],projects:[],ideas:[],cfg:{target:null,targetRev:null,me:'Tobias',team:['Tobias'],commission:2},tpl:{steps:DEF_STEPS.slice(),info:DEF_INFO.slice()},loaded:false,live:false};
 let db=null,dl=null;
 const LS=(()=>{try{const s=window.localStorage;s.setItem('_mc','1');s.removeItem('_mc');return s}catch(e){return null}})();
 const pref=(k,d)=>{try{const v=LS&&LS.getItem('mc.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}};
