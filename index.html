@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f26b1f">
+<title>Metz Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="auth" id="auth" hidden></div>
+<div class="app">
+  <aside class="side" id="side" aria-label="Navigation"></aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="mainw">
+    <header class="topbar" id="topbar"></header>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+  <nav class="bnav" id="bnav" aria-label="Hurtig navigation"></nav>
+</div>
+<div class="dscrim" id="dscrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="bulk" id="bulk" hidden></div>
+<div class="pop" id="pop" hidden></div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+<dialog class="m" id="dlg"></dialog>
+<dialog class="m pal" id="pal" aria-label="Søg"></dialog>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="adapter.js"></script>
+<script src="auth.js"></script>
+</body>
+</html>
